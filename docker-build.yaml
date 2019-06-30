@@ -15,13 +15,14 @@ Parameters:
     InstanceType:
         Description: WebServer EC2 instance type
         Type: String
-        Default: c5.large
+        Default: c5.xlarge
         AllowedValues:
             - t1.micro
             - t2.nano
             - t2.micro
             - t2.small
             - c5.large
+            - c5.xlarge
         ConstraintDescription: must be a valid EC2 instance type.
     KeyName:
         Description: Name of an EC2 KeyPair to enable SSH access to the instance.
@@ -192,17 +193,6 @@ Resources:
                             Action:
                             - "cloudformation:ListExports"
                             Resource: "*"
-                -
-                    PolicyName: "GetCodeDeploy"
-                    PolicyDocument:
-                        Version: "2012-10-17"
-                        Statement:
-                        -
-                            Effect: "Allow"
-                            Action:
-                            - "s3:Get*"
-                            - "s3:List*"
-                            Resource: "arn:aws:s3:::aws-codedeploy-ap-southeast-2/*"
 
     DockerBuildProfile:
         Type: AWS::IAM::InstanceProfile
@@ -212,55 +202,18 @@ Resources:
 
     DockerBuildInstance:
         Type: AWS::EC2::Instance
-        # Metadata:
-        #     Comment1: configure Node-Red
-        #     AWS::CloudFormation::Init:
-        #         configSets:
-        #             InstallAndRun:
-        #                 - configure
-        #         configure:
-        #             files:
-        #                 /home/ec2-user/new-settings.js:
-        #                     content: !Sub |
-        #                         module.exports = {
-        #                             uiPort: process.env.PORT || 1880,
-        #                             mqttReconnectTime: 15000,
-        #                             serialReconnectTime: 15000,
-        #                             debugMaxLength: 1000,
-        #                             functionGlobalContext: {
-        #                             },
-        #                             exportGlobalContextKeys: false,
-        #                             logging: {
-        #                                 console: {
-        #                                     level: "info",
-        #                                     metrics: false,
-        #                                     audit: false
-        #                                 }
-        #                             },
-        #                             adminAuth: {
-        #                                 type: "credentials",
-        #                                 users: [{
-        #                                     username: "${NodeRedUsername}",
-        #                                     password: "${NodeRedPassHash}",
-        #                                     permissions: "*"
-        #                                 }]
-        #                             },
-        #                             editorTheme: {
-        #                                 projects: {
-        #                                     enabled: false
-        #                                 }
-        #                             }
-        #                         }
-        #                     mode: "000644"
-        #                     owner: "ec2-user"
-        #                     group: "ec2-user"
-        #             commands: 
-        #                 0_start_node_red:
-        #                     command: "runuser -l ec2-user -c 'pm2 start node-red -- -s /home/ec2-user/new-settings.js -v'"
-        #                 1_save_pm2:
-        #                     command: "runuser -l ec2-user -c 'pm2 save'"
-        #                 2_startup_pm2:
-        #                     command: "runuser -l ec2-user -c 'sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ec2-user --hp /home/ec2-user'"
+        Metadata:
+            AWS::CloudFormation::Init:
+                configSets:
+                    BuildDocker:
+                        - build
+                build:
+                    sources:
+                        c:\\temp: https://github.com/AndreiBarbuOz/dockerized-robot/tarball/master
+                    commands: 
+                        0_build:
+                            cwd: c:\\temp
+                            command: powershell -Command "c:\\temp\\build-image.ps1"
         Properties:
             ImageId: !FindInMap
                 - AWSRegionArch2AMI
@@ -273,20 +226,34 @@ Resources:
             KeyName: !Ref KeyName
             UserData:
                 Fn::Base64: !Sub |
-                    <powershell>
-                    Set-ExecutionPolicy RemoteSigned -Force
-                    Import-Module AWSPowerShell
-                    $REGION = (ConvertFrom-Json (Invoke-WebRequest -Uri http://169.254.169.254/latest/dynamic/instance-identity/document -UseBasicParsing).Content).region
-                    New-Item -Path c:\temp -ItemType "directory" -Force
-                    powershell.exe -Command Read-S3Object -BucketName aws-codedeploy-$REGION -Key latest/codedeploy-agent-updater.msi -File c:\temp\codedeploy-agent-updater.msi
-                    Start-Sleep -Seconds 60 
-                    Start-Process -FilePath "c:\temp\codedeploy-agent-updater.msi" -ArgumentList "/q /l c:/temp/host-agent-log.txt"
-                    </powershell>
+                    # <powershell>
+                    # Set-ExecutionPolicy RemoteSigned -Force
+                    # Import-Module AWSPowerShell
+                    # $REGION = (ConvertFrom-Json (Invoke-WebRequest -Uri http://169.254.169.254/latest/dynamic/instance-identity/document -UseBasicParsing).Content).region
+                    # New-Item -Path c:\temp -ItemType "directory" -Force
+                    # powershell.exe -Command Read-S3Object -BucketName aws-codedeploy-$REGION -Key latest/codedeploy-agent-updater.msi -File c:\temp\codedeploy-agent-updater.msi
+                    # Start-Sleep -Seconds 60 
+                    # Start-Process -FilePath "c:\temp\codedeploy-agent-updater.msi" -ArgumentList "/q /l c:/temp/host-agent-log.txt"
+                    # </powershell>
+
+                    <script>
+                    mkdir C:\temp
+                    cfn-init.exe -v --stack ${AWS::StackId} --resource DockerBuildInstance --region ${AWS::Region} --configsets BuildDocker
+                    # cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource DockerBuildInstance --region ${AWS::Region}
+                    </script>                    
             Tags:
                 - 
                     Key: Name
                     Value: docker-build
             IamInstanceProfile: !Ref DockerBuildProfile
+            BlockDeviceMappings:
+                -   DeviceName: /dev/sda1
+                    Ebs:
+                        VolumeSize: 50
+        # CreationPolicy:
+        #     ResourceSignal:
+        #         Count: 1
+        #         Timeout: "PT55M"
 
     Eth0:
         Type: AWS::EC2::NetworkInterface
@@ -319,3 +286,8 @@ Outputs:
         Value: !Ref HttpSecurityGroup        
         Export:
             Name: !Join [":", [!Ref "AWS::StackName", "security-group-id"]]
+    RobotRepositoryUri:
+        Description: The URI of the repository
+        Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RobotRepository}"
+        Export:
+            Name: !Join [":", [!Ref "AWS::StackName", "ecr-uri"]]

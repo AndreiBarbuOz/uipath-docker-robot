@@ -9,7 +9,7 @@
     },
     {
       "ParameterKey": "EnvironmentName",
-      "ParameterValue": "test"
+      "ParameterValue": "docker-build"
     },
     {
       "ParameterKey": "KeyName",

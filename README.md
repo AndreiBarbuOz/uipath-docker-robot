@@ -12,16 +12,6 @@ Basic UiPath robot in a Docker container
 Deploying the server contains 2 steps:
 1. Deploy the prerequisites (the VPC with all components and the username/password combination)
 ```cmd
-aws cloudformation create-stack --stack-name docker-build --template-body file://prereq.yaml --parameters file://prereq-params.json
+aws cloudformation create-stack --stack-name docker-build --template-body file://docker-build.yaml --parameters file://docker-build-params.json --capabilities CAPABILITY_IAM
 ```
-
-
-Update the stack using: 
-```cmd
-aws cloudformation update-stack --stack-name node-red --template-body file://linux-node-red.yaml --parameters file://node-red-params.json
-```
-
-## Configuration
-
-`node-red` is configured using a `settings.js` file. The default file can be found [here](https://github.com/node-red/node-red/blob/master/packages/node_modules/node-red/settings.js)
 
