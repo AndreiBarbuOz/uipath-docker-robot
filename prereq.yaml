@@ -1,0 +1,321 @@
+Description: 
+    Deploys the required infrastructure needed to create the docker-build instance
+Parameters:
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+    VpcCIDR: 
+        Description: The IP range (CIDR notation) for this VPC
+        Type: String
+        Default: 10.192.0.0/16
+    PublicSubnetCIDR:
+        Description: The IP range (CIDR notation) for the public subnet
+        Type: String
+        Default: 10.192.10.0/24
+    InstanceType:
+        Description: WebServer EC2 instance type
+        Type: String
+        Default: c5.large
+        AllowedValues:
+            - t1.micro
+            - t2.nano
+            - t2.micro
+            - t2.small
+            - c5.large
+        ConstraintDescription: must be a valid EC2 instance type.
+    KeyName:
+        Description: Name of an EC2 KeyPair to enable SSH access to the instance.
+        Type: 'AWS::EC2::KeyPair::KeyName'
+        ConstraintDescription: must be the name of an existing EC2 KeyPair.
+Mappings:
+    AWSInstanceType2Arch:
+        t1.micro:
+            Arch: HVM64
+        t2.nano:
+            Arch: HVM64
+        t2.micro:
+            Arch: HVM64
+        t2.small:
+            Arch: HVM64
+    AWSRegionArch2AMI:
+        ap-southeast-2:
+            HVM64: ami-022ecd08d23a9bf9c
+
+Resources:
+    VPC: 
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: !Ref VpcCIDR
+            EnableDnsSupport: true
+            EnableDnsHostnames: true
+            Tags: 
+                - Key: Name 
+                  Value: !Ref EnvironmentName
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags:
+                - Key: Name
+                  Value: !Ref EnvironmentName
+    InternetGatewayAttachment:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            InternetGatewayId: !Ref InternetGateway
+            VpcId: !Ref VPC
+    PublicSubnet:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: !Ref PublicSubnetCIDR
+            MapPublicIpOnLaunch: true
+            Tags: 
+                - Key: Name 
+                  Value: !Sub ${EnvironmentName} Public Subnet
+    PublicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+            VpcId: !Ref VPC
+            Tags: 
+                - Key: Name 
+                  Value: !Sub ${EnvironmentName} Public Routes
+    DefaultPublicRoute: 
+        Type: AWS::EC2::Route
+        DependsOn: InternetGatewayAttachment
+        Properties: 
+            RouteTableId: !Ref PublicRouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+    PublicSubnetRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PublicSubnet
+    HttpSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupName: "http-ingress-sg"
+            GroupDescription: "Basic security group"
+            VpcId: !Ref VPC
+            SecurityGroupIngress:
+            - 
+                Description: "SSH ingress connections"
+                IpProtocol: "tcp"
+                FromPort: 22
+                ToPort: 22
+                CidrIp: "0.0.0.0/0"
+            - 
+                Description: "HTTP access from any address"
+                IpProtocol: "tcp"
+                FromPort: 80
+                ToPort: 80
+                CidrIp: "0.0.0.0/0"
+            - 
+                Description: "HTTPS access from any address"
+                IpProtocol: "tcp"
+                FromPort: 443
+                ToPort: 443
+                CidrIp: "0.0.0.0/0"
+            - 
+                Description: "RDP protocol"
+                IpProtocol: "tcp"
+                FromPort: 3389
+                ToPort: 3389
+                CidrIp: "0.0.0.0/0"
+            SecurityGroupEgress:
+            -
+                Description: "Allow all outbound traffic"
+                IpProtocol: "-1"
+                CidrIp: "0.0.0.0/0"
+    RobotRepository:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryPolicyText:
+                Version: "2012-10-17"
+                Statement:
+                -
+                    Sid: AllowPull
+                    Effect: Allow
+                    Principal:
+                        Service:
+                            - codebuild.amazonaws.com
+                    Action:
+                        - "ecr:GetDownloadUrlForLayer"
+                        - "ecr:BatchGetImage"
+                        - "ecr:BatchCheckLayerAvailability"
+    DockerBuildRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                -
+                    Effect: "Allow"
+                    Principal:
+                        Service:
+                            - "ec2.amazonaws.com"
+                    Action:
+                    - "sts:AssumeRole"
+            Policies:
+                -
+                    PolicyName: "AllowEcrAccess"
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                            - "ecr:GetDownloadUrlForLayer"
+                            - "ecr:BatchGetImage"
+                            - "ecr:BatchCheckLayerAvailability"
+                            - "ecr:PutImage"
+                            - "ecr:InitiateLayerUpload"
+                            - "ecr:UploadLayerPart"
+                            - "ecr:CompleteLayerUpload"
+                            Resource: !GetAtt RobotRepository.Arn
+                -
+                    PolicyName: "GetToken"
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                            - "ecr:GetAuthorizationToken"
+                            Resource: "*"
+                -
+                    PolicyName: "ListCfnExports"
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                            - "cloudformation:ListExports"
+                            Resource: "*"
+                -
+                    PolicyName: "GetCodeDeploy"
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                            - "s3:Get*"
+                            - "s3:List*"
+                            Resource: "arn:aws:s3:::aws-codedeploy-ap-southeast-2/*"
+
+    DockerBuildProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Roles:
+                - !Ref DockerBuildRole
+
+    DockerBuildInstance:
+        Type: AWS::EC2::Instance
+        # Metadata:
+        #     Comment1: configure Node-Red
+        #     AWS::CloudFormation::Init:
+        #         configSets:
+        #             InstallAndRun:
+        #                 - configure
+        #         configure:
+        #             files:
+        #                 /home/ec2-user/new-settings.js:
+        #                     content: !Sub |
+        #                         module.exports = {
+        #                             uiPort: process.env.PORT || 1880,
+        #                             mqttReconnectTime: 15000,
+        #                             serialReconnectTime: 15000,
+        #                             debugMaxLength: 1000,
+        #                             functionGlobalContext: {
+        #                             },
+        #                             exportGlobalContextKeys: false,
+        #                             logging: {
+        #                                 console: {
+        #                                     level: "info",
+        #                                     metrics: false,
+        #                                     audit: false
+        #                                 }
+        #                             },
+        #                             adminAuth: {
+        #                                 type: "credentials",
+        #                                 users: [{
+        #                                     username: "${NodeRedUsername}",
+        #                                     password: "${NodeRedPassHash}",
+        #                                     permissions: "*"
+        #                                 }]
+        #                             },
+        #                             editorTheme: {
+        #                                 projects: {
+        #                                     enabled: false
+        #                                 }
+        #                             }
+        #                         }
+        #                     mode: "000644"
+        #                     owner: "ec2-user"
+        #                     group: "ec2-user"
+        #             commands: 
+        #                 0_start_node_red:
+        #                     command: "runuser -l ec2-user -c 'pm2 start node-red -- -s /home/ec2-user/new-settings.js -v'"
+        #                 1_save_pm2:
+        #                     command: "runuser -l ec2-user -c 'pm2 save'"
+        #                 2_startup_pm2:
+        #                     command: "runuser -l ec2-user -c 'sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ec2-user --hp /home/ec2-user'"
+        Properties:
+            ImageId: !FindInMap
+                - AWSRegionArch2AMI
+                - !Ref 'AWS::Region'
+                - HVM64
+            InstanceType: !Ref InstanceType
+            NetworkInterfaces:
+                -   NetworkInterfaceId: !Ref 'Eth0'
+                    DeviceIndex: '0'
+            KeyName: !Ref KeyName
+            UserData:
+                Fn::Base64: !Sub |
+                    <powershell>
+                    Set-ExecutionPolicy RemoteSigned -Force
+                    Import-Module AWSPowerShell
+                    $REGION = (ConvertFrom-Json (Invoke-WebRequest -Uri http://169.254.169.254/latest/dynamic/instance-identity/document -UseBasicParsing).Content).region
+                    New-Item -Path c:\temp -ItemType "directory" -Force
+                    powershell.exe -Command Read-S3Object -BucketName aws-codedeploy-$REGION -Key latest/codedeploy-agent-updater.msi -File c:\temp\codedeploy-agent-updater.msi
+                    Start-Sleep -Seconds 60 
+                    Start-Process -FilePath "c:\temp\codedeploy-agent-updater.msi" -ArgumentList "/q /l c:/temp/host-agent-log.txt"
+                    </powershell>
+            Tags:
+                - 
+                    Key: Name
+                    Value: docker-build
+            IamInstanceProfile: !Ref DockerBuildProfile
+
+    Eth0:
+        Type: AWS::EC2::NetworkInterface
+        Properties:
+            Description: eth0
+            SourceDestCheck: 'true'
+            SubnetId: 
+                !Ref PublicSubnet
+            Tags:
+                - Key: Name
+                  Value: Interface 0
+                - Key: Interface
+                  Value: eth0
+            GroupSet: 
+                - !Ref HttpSecurityGroup
+
+Outputs: 
+    VpcId:
+        Description: A reference to the created VPC id
+        Value: !Ref VPC
+        Export:
+            Name: !Join [":", [!Ref "AWS::StackName", "VPC-id"]]
+    PublicSubnetId:
+        Description: A reference to the public subnet id
+        Value: !Ref PublicSubnet
+        Export:
+            Name: !Join [":", [!Ref "AWS::StackName", "subnet-id"]]
+    HttpSecurityGroupId:
+        Description: Security group with usual ingress rules
+        Value: !Ref HttpSecurityGroup        
+        Export:
+            Name: !Join [":", [!Ref "AWS::StackName", "security-group-id"]]

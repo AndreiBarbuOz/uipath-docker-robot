@@ -1,0 +1,18 @@
+[
+    {
+      "ParameterKey": "PublicSubnetCIDR",
+      "ParameterValue": "10.1.10.0/24"
+    },
+    {
+      "ParameterKey": "VpcCIDR",
+      "ParameterValue": "10.1.0.0/16"
+    },
+    {
+      "ParameterKey": "EnvironmentName",
+      "ParameterValue": "test"
+    },
+    {
+      "ParameterKey": "KeyName",
+      "ParameterValue": "aws-sydney"
+    }  
+  ]
