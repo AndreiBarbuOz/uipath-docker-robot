@@ -1,6 +1,7 @@
 # Dockerized robot build CFN template
 
 CFN template used to build an UiPath robot in a Docker container
+![docker-robot-build](img/dockerized-robot-build.png)
 
 ## Prerequisites
 

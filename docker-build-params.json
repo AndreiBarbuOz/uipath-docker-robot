@@ -1,18 +1,14 @@
 [
-    {
-      "ParameterKey": "PublicSubnetCIDR",
-      "ParameterValue": "10.1.10.0/24"
-    },
-    {
-      "ParameterKey": "VpcCIDR",
-      "ParameterValue": "10.1.0.0/16"
-    },
-    {
-      "ParameterKey": "EnvironmentName",
-      "ParameterValue": "docker-build"
-    },
-    {
-      "ParameterKey": "KeyName",
-      "ParameterValue": "aws-sydney"
-    }  
-  ]
+  {
+    "ParameterKey": "PublicSubnetCIDR",
+    "ParameterValue": "10.1.10.0/24"
+  },
+  {
+    "ParameterKey": "VpcCIDR",
+    "ParameterValue": "10.1.0.0/16"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "aws-sydney"
+  }
+]
