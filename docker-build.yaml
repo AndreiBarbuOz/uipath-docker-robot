@@ -129,6 +129,7 @@ Resources:
                 CidrIp: "0.0.0.0/0"
     RobotRepository:
         Type: AWS::ECR::Repository
+        DeletionPolicy: Retain
         Properties:
             RepositoryPolicyText:
                 Version: "2012-10-17"
@@ -210,10 +211,13 @@ Resources:
                 build:
                     sources:
                         c:\\temp: https://github.com/AndreiBarbuOz/dockerized-robot/tarball/master
+                    files:
+                        c:\\temp\\file_name.txt:
+                            content: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RobotRepository}"
                     commands: 
                         0_build:
                             cwd: c:\\temp
-                            command: powershell -Command "c:\\temp\\build-image.ps1"
+                            command: powershell -Command "c:\\temp\\build-image.ps1" -file_name file_name.txt
         Properties:
             ImageId: !FindInMap
                 - AWSRegionArch2AMI
@@ -226,20 +230,10 @@ Resources:
             KeyName: !Ref KeyName
             UserData:
                 Fn::Base64: !Sub |
-                    # <powershell>
-                    # Set-ExecutionPolicy RemoteSigned -Force
-                    # Import-Module AWSPowerShell
-                    # $REGION = (ConvertFrom-Json (Invoke-WebRequest -Uri http://169.254.169.254/latest/dynamic/instance-identity/document -UseBasicParsing).Content).region
-                    # New-Item -Path c:\temp -ItemType "directory" -Force
-                    # powershell.exe -Command Read-S3Object -BucketName aws-codedeploy-$REGION -Key latest/codedeploy-agent-updater.msi -File c:\temp\codedeploy-agent-updater.msi
-                    # Start-Sleep -Seconds 60 
-                    # Start-Process -FilePath "c:\temp\codedeploy-agent-updater.msi" -ArgumentList "/q /l c:/temp/host-agent-log.txt"
-                    # </powershell>
-
                     <script>
                     mkdir C:\temp
                     cfn-init.exe -v --stack ${AWS::StackId} --resource DockerBuildInstance --region ${AWS::Region} --configsets BuildDocker
-                    # cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource DockerBuildInstance --region ${AWS::Region}
+                    cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource DockerBuildInstance --region ${AWS::Region}
                     </script>                    
             Tags:
                 - 
@@ -250,10 +244,10 @@ Resources:
                 -   DeviceName: /dev/sda1
                     Ebs:
                         VolumeSize: 50
-        # CreationPolicy:
-        #     ResourceSignal:
-        #         Count: 1
-        #         Timeout: "PT55M"
+        CreationPolicy:
+            ResourceSignal:
+                Count: 1
+                Timeout: "PT1H"
 
     Eth0:
         Type: AWS::EC2::NetworkInterface
