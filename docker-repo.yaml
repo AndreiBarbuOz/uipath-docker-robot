@@ -1,0 +1,31 @@
+Description: Deploys the required infrastructure needed to create the docker-build instance
+
+Resources:
+  RobotRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowPull
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+
+Outputs:
+  RobotRepositoryUri:
+    Description: The URI of the repository
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RobotRepository}"
+    Export:
+      Name: !Join [":", [!Ref "AWS::StackName", "ecr-uri"]]
+  RobotRepositoryArn:
+    Description: The ARN of the repository
+    Value: !GetAtt RobotRepository.Arn
+    Export:
+      Name: !Join [":", [!Ref "AWS::StackName", "ecr-arn"]]

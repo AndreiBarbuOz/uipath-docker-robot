@@ -16,10 +16,17 @@ For this, an EC2 instance is launched and during its launch script, the [dockeri
 
 ## Deployment
 
-To build the docker image, just create the stack from command line:
+To build the docker image, there are 2 steps involved:
+1. Create the Docker Repo stack from command line:
+
+```cmd
+aws cloudformation create-stack --stack-name docker-image-repo --template-body file://docker-repo.yaml 
+```
+2. Create the Docker image build stack: 
 
 ```cmd
 aws cloudformation create-stack --stack-name docker-build --template-body file://docker-build.yaml --parameters file://docker-build-params.json --capabilities CAPABILITY_IAM
 ```
 
+*The total time it takes to build the Docker image is around 30 minutes.*
 
